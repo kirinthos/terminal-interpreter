@@ -115,9 +115,24 @@ fn default_history_read_limit() -> usize {
     DEFAULT_HISTORY_READ_LIMIT
 }
 
-fn default_config_path() -> Option<PathBuf> {
+pub fn default_config_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "interpreter")
         .map(|dirs| dirs.config_dir().join("config.json"))
+}
+
+impl Config {
+    /// Write the config as pretty-printed JSON, creating parent dirs as needed.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating {}", parent.display()))?;
+            }
+        }
+        let body = serde_json::to_string_pretty(self).context("serializing config")?;
+        std::fs::write(path, body).with_context(|| format!("writing {}", path.display()))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

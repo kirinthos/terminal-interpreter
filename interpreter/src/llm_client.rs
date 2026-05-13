@@ -3,11 +3,7 @@ use anyhow::Result;
 use crate::config::Config;
 use crate::shell::ShellContext;
 
-const DEFAULT_SYSTEM_PROMPT: &str = "\
-You are a shell command generator. Given the user's partial command and the \
-context of their current shell, respond with a single executable shell command \
-that fulfills the user's intent. Output ONLY the command — no prose, no markdown \
-fences, no explanation. The command must be valid for the named shell.";
+const DEFAULT_SYSTEM_PROMPT: &str = include_str!("prompts/default_system.md");
 
 /// Build the prompt and route the request to the configured provider.
 ///
@@ -76,7 +72,10 @@ fn sanitize(raw: String) -> String {
     let trimmed = raw.trim();
     let stripped = trimmed
         .strip_prefix("```")
-        .map(|s| s.trim_start_matches(|c: char| c.is_alphanumeric()).trim_start())
+        .map(|s| {
+            s.trim_start_matches(|c: char| c.is_alphanumeric())
+                .trim_start()
+        })
         .and_then(|s| s.strip_suffix("```"))
         .unwrap_or(trimmed);
     stripped.trim().to_string()

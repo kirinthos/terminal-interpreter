@@ -2,8 +2,8 @@ use anyhow::Result;
 use clap::Parser;
 
 use interpreter::cli::Cli;
-use interpreter::config::Config;
-use interpreter::{llm_client, shell};
+use interpreter::config::{self, Config};
+use interpreter::{init_tui, llm_client, model_list, shell};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,6 +17,19 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let config = Config::load(cli.config.as_deref())?.with_overrides(&cli);
+
+    if cli.model_list {
+        return model_list::run();
+    }
+
+    if cli.init {
+        let path = cli
+            .config
+            .clone()
+            .or_else(config::default_config_path)
+            .ok_or_else(|| anyhow::anyhow!("could not determine a config path; pass --config"))?;
+        return init_tui::run(path, config);
+    }
 
     let shell_ctx = shell::ShellContext::detect(config.history_read_limit)?;
     let command = llm_client::generate_command(&config, &shell_ctx, &cli.input()).await?;

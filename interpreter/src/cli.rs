@@ -31,6 +31,16 @@ pub struct Cli {
     /// Print the resolved configuration and exit without calling the LLM.
     #[arg(long)]
     pub dry_run: bool,
+
+    /// List available models from each configured provider in the exact
+    /// `provider/model-name` form expected by the config file, then exit.
+    /// Pricing is included where known.
+    #[arg(long)]
+    pub model_list: bool,
+
+    /// Launch the configuration TUI to edit the config file interactively.
+    #[arg(long)]
+    pub init: bool,
 }
 
 impl Cli {
