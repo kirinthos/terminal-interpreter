@@ -11,13 +11,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use cursive::Cursive;
 use cursive::event::{Event, Key};
+use cursive::theme::{BorderStyle, Color, PaletteColor};
 use cursive::traits::*;
 use cursive::view::Nameable;
 use cursive::views::{
     Dialog, EditView, LinearLayout, OnEventView, Panel, ResizedView, SelectView, TextView,
 };
-use cursive::Cursive;
 
 use crate::config::{Config, ProviderEnv};
 use crate::model_list::{self, Row};
@@ -28,6 +29,10 @@ const MODEL_FILTER_NAME: &str = "model_filter";
 pub fn run(path: PathBuf, config: Config) -> Result<()> {
     let state = Arc::new(Mutex::new(State { config, path }));
     let mut siv = cursive::default();
+
+    let base_theme = siv.current_theme().clone();
+    siv.set_theme(dark_theme(base_theme));
+
     show_main_menu(&mut siv, state);
     siv.run();
     Ok(())
@@ -39,6 +44,50 @@ struct State {
 }
 
 // ---------------------------------------------------------------------------
+// Theme — terminal-flavoured dark mode.
+// ---------------------------------------------------------------------------
+//
+// Goal: feel like a normal dark terminal session. Backgrounds let the
+// terminal's own colour come through where we can, foreground is a soft
+// near-white (not full white, which fights with most terminal themes), and
+// the selection highlight is a desaturated blue-grey block that's visible
+// without grabbing attention. Borders are simple ASCII; shadows are off so
+// dialogs don't paint dark blocks over the surrounding terminal.
+
+fn dark_theme(mut theme: cursive::theme::Theme) -> cursive::theme::Theme {
+    use PaletteColor::*;
+
+    // Soft off-white text on a black canvas. `TerminalDefault` lets the user's
+    // own terminal background show through where possible.
+    let fg_primary = Color::Rgb(0xd0, 0xd0, 0xd0);
+    let fg_dim = Color::Rgb(0x90, 0x90, 0x90);
+    let fg_faint = Color::Rgb(0x60, 0x60, 0x60);
+    let accent = Color::Rgb(0x7a, 0xa2, 0xc7); // muted steel-blue for titles
+    let accent_dim = Color::Rgb(0x4d, 0x6a, 0x88);
+    let highlight = Color::Rgb(0x33, 0x3b, 0x4d); // unintrusive selection bar
+    let highlight_inactive = Color::Rgb(0x22, 0x26, 0x33);
+
+    theme.palette[Background] = Color::TerminalDefault;
+    theme.palette[Shadow] = Color::TerminalDefault;
+    theme.palette[View] = Color::TerminalDefault;
+
+    theme.palette[Primary] = fg_primary;
+    theme.palette[Secondary] = fg_dim;
+    theme.palette[Tertiary] = fg_faint;
+
+    theme.palette[TitlePrimary] = accent;
+    theme.palette[TitleSecondary] = accent_dim;
+
+    theme.palette[Highlight] = highlight;
+    theme.palette[HighlightInactive] = highlight_inactive;
+    theme.palette[HighlightText] = fg_primary;
+
+    theme.shadow = false;
+    theme.borders = BorderStyle::Simple;
+    theme
+}
+
+// ---------------------------------------------------------------------------
 // Field schema — single source of truth for menu entries and descriptions.
 // ---------------------------------------------------------------------------
 
@@ -46,7 +95,6 @@ struct State {
 enum Field {
     Model,
     HistoryLimit,
-    HistoryReadLimit,
     Temperature,
     SystemPrompt,
     OpenAi,
@@ -59,7 +107,6 @@ impl Field {
         match self {
             Self::Model => "model",
             Self::HistoryLimit => "history_limit",
-            Self::HistoryReadLimit => "history_read_limit",
             Self::Temperature => "temperature",
             Self::SystemPrompt => "system_prompt",
             Self::OpenAi => "providers.openai",
@@ -69,16 +116,18 @@ impl Field {
     }
     fn description(&self) -> &'static str {
         match self {
-            Self::Model =>
-                "Default model in `provider/model-name` form. Pick from a live catalogue.",
-            Self::HistoryLimit =>
-                "How many recent shell-history lines are sent to the LLM as context.",
-            Self::HistoryReadLimit =>
-                "How many lines to read off the tail of the shell history file before trimming.",
-            Self::Temperature =>
-                "Sampling temperature (0.0–2.0). Leave blank to use the provider default.",
-            Self::SystemPrompt =>
-                "Override the system prompt sent to the model. Leave blank for the default.",
+            Self::Model => {
+                "Default model in `provider/model-name` form. Pick from a live catalogue."
+            }
+            Self::HistoryLimit => {
+                "How many recent shell-history lines to read off the history file and send to the LLM."
+            }
+            Self::Temperature => {
+                "Sampling temperature (0.0–2.0). Leave blank to use the provider default."
+            }
+            Self::SystemPrompt => {
+                "Override the system prompt sent to the model. Leave blank for the default."
+            }
             Self::OpenAi => "OpenAI provider settings: api_key, base_url.",
             Self::Anthropic => "Anthropic provider settings: api_key, base_url.",
             Self::Ollama => "Ollama provider settings: api_key (usually unset), base_url.",
@@ -89,7 +138,6 @@ impl Field {
 const FIELDS: &[Field] = &[
     Field::Model,
     Field::HistoryLimit,
-    Field::HistoryReadLimit,
     Field::Temperature,
     Field::SystemPrompt,
     Field::OpenAi,
@@ -135,13 +183,6 @@ fn handle_field(siv: &mut Cursive, state: Arc<Mutex<State>>, field: Field) {
             state.lock().unwrap().config.history_limit,
             |c, v| c.history_limit = v,
         ),
-        Field::HistoryReadLimit => edit_usize(
-            siv,
-            state.clone(),
-            field,
-            state.lock().unwrap().config.history_read_limit,
-            |c, v| c.history_read_limit = v,
-        ),
         Field::Temperature => edit_optional_f32(
             siv,
             state.clone(),
@@ -166,6 +207,11 @@ fn handle_field(siv: &mut Cursive, state: Arc<Mutex<State>>, field: Field) {
 // Scalar editors
 // ---------------------------------------------------------------------------
 
+/// A Save callback that's shared between the EditView's Enter handler and the
+/// Save button on the surrounding Dialog. Cursive callbacks require
+/// `Send + Sync + 'static`, so we use an Arc of a trait object.
+type SubmitFn = Arc<dyn Fn(&mut Cursive) + Send + Sync + 'static>;
+
 fn edit_usize(
     siv: &mut Cursive,
     state: Arc<Mutex<State>>,
@@ -174,32 +220,37 @@ fn edit_usize(
     apply: impl Fn(&mut Config, usize) + Send + Sync + 'static,
 ) {
     let input_name = "scalar_input";
-    let edit = EditView::new()
-        .content(current.to_string())
-        .with_name(input_name)
-        .fixed_width(20);
-
-    let apply = Arc::new(apply);
     let state2 = state.clone();
-    let apply2 = apply.clone();
-    let on_save = move |s: &mut Cursive| {
+    let apply = Arc::new(apply);
+
+    let on_save: SubmitFn = Arc::new(move |s: &mut Cursive| {
         let value: String = s
             .call_on_name(input_name, |v: &mut EditView| v.get_content().to_string())
             .unwrap_or_default();
         match value.trim().parse::<usize>() {
             Ok(n) => {
-                apply2(&mut state2.lock().unwrap().config, n);
+                apply(&mut state2.lock().unwrap().config, n);
                 show_main_menu(s, state2.clone());
             }
             Err(_) => s.add_layer(Dialog::info("Enter a non-negative integer")),
         }
-    };
+    });
+
+    let edit = EditView::new()
+        .content(current.to_string())
+        .on_submit({
+            let on_save = on_save.clone();
+            move |s, _| on_save(s)
+        })
+        .with_name(input_name)
+        .fixed_width(20);
 
     let body = LinearLayout::vertical()
         .child(TextView::new(field.description()))
         .child(TextView::new("\nValue:"))
         .child(edit);
-    push_detail(siv, state, field.label(), body, on_save);
+    let on_save_button = on_save.clone();
+    push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
 }
 
 fn edit_optional_f32(
@@ -210,15 +261,10 @@ fn edit_optional_f32(
     apply: impl Fn(&mut Config, Option<f32>) + Send + Sync + 'static,
 ) {
     let input_name = "scalar_input";
-    let edit = EditView::new()
-        .content(current.map(|v| v.to_string()).unwrap_or_default())
-        .with_name(input_name)
-        .fixed_width(20);
-
-    let apply = Arc::new(apply);
     let state2 = state.clone();
-    let apply2 = apply.clone();
-    let on_save = move |s: &mut Cursive| {
+    let apply = Arc::new(apply);
+
+    let on_save: SubmitFn = Arc::new(move |s: &mut Cursive| {
         let raw: String = s
             .call_on_name(input_name, |v: &mut EditView| v.get_content().to_string())
             .unwrap_or_default();
@@ -230,18 +276,28 @@ fn edit_optional_f32(
         };
         match parsed {
             Ok(v) => {
-                apply2(&mut state2.lock().unwrap().config, v);
+                apply(&mut state2.lock().unwrap().config, v);
                 show_main_menu(s, state2.clone());
             }
             Err(_) => s.add_layer(Dialog::info("Enter a float or leave blank")),
         }
-    };
+    });
+
+    let edit = EditView::new()
+        .content(current.map(|v| v.to_string()).unwrap_or_default())
+        .on_submit({
+            let on_save = on_save.clone();
+            move |s, _| on_save(s)
+        })
+        .with_name(input_name)
+        .fixed_width(20);
 
     let body = LinearLayout::vertical()
         .child(TextView::new(field.description()))
         .child(TextView::new("\nValue (blank to unset):"))
         .child(edit);
-    push_detail(siv, state, field.label(), body, on_save);
+    let on_save_button = on_save.clone();
+    push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
 }
 
 fn edit_optional_string(
@@ -252,15 +308,10 @@ fn edit_optional_string(
     apply: impl Fn(&mut Config, Option<String>) + Send + Sync + 'static,
 ) {
     let input_name = "scalar_input";
-    let edit = EditView::new()
-        .content(current.unwrap_or_default())
-        .with_name(input_name)
-        .full_width();
-
-    let apply = Arc::new(apply);
     let state2 = state.clone();
-    let apply2 = apply.clone();
-    let on_save = move |s: &mut Cursive| {
+    let apply = Arc::new(apply);
+
+    let on_save: SubmitFn = Arc::new(move |s: &mut Cursive| {
         let raw: String = s
             .call_on_name(input_name, |v: &mut EditView| v.get_content().to_string())
             .unwrap_or_default();
@@ -269,15 +320,25 @@ fn edit_optional_string(
         } else {
             Some(raw)
         };
-        apply2(&mut state2.lock().unwrap().config, value);
+        apply(&mut state2.lock().unwrap().config, value);
         show_main_menu(s, state2.clone());
-    };
+    });
+
+    let edit = EditView::new()
+        .content(current.unwrap_or_default())
+        .on_submit({
+            let on_save = on_save.clone();
+            move |s, _| on_save(s)
+        })
+        .with_name(input_name)
+        .full_width();
 
     let body = LinearLayout::vertical()
         .child(TextView::new(field.description()))
         .child(TextView::new("\nValue (blank to unset):"))
         .child(edit);
-    push_detail(siv, state, field.label(), body, on_save);
+    let on_save_button = on_save.clone();
+    push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
 }
 
 fn push_detail<V: cursive::view::View>(
@@ -379,17 +440,17 @@ fn edit_provider_field(
         .unwrap_or_default();
 
     let input_name = "scalar_input";
-    let edit = EditView::new()
-        .content(current)
-        .with_name(input_name)
-        .full_width();
-
     let state2 = state.clone();
-    let on_save = move |s: &mut Cursive| {
+
+    let on_save: SubmitFn = Arc::new(move |s: &mut Cursive| {
         let raw: String = s
             .call_on_name(input_name, |v: &mut EditView| v.get_content().to_string())
             .unwrap_or_default();
-        let value = if raw.trim().is_empty() { None } else { Some(raw) };
+        let value = if raw.trim().is_empty() {
+            None
+        } else {
+            Some(raw)
+        };
         {
             let mut st = state2.lock().unwrap();
             let mut env = slot.get(&st.config).cloned().unwrap_or_default();
@@ -401,7 +462,16 @@ fn edit_provider_field(
             slot.set(&mut st.config, env);
         }
         show_provider_menu(s, state2.clone(), slot);
-    };
+    });
+
+    let edit = EditView::new()
+        .content(current)
+        .on_submit({
+            let on_save = on_save.clone();
+            move |s, _| on_save(s)
+        })
+        .with_name(input_name)
+        .full_width();
 
     let title = format!("providers.{}.{which}", slot.name());
     let body = LinearLayout::vertical()
@@ -411,9 +481,10 @@ fn edit_provider_field(
         )))
         .child(TextView::new("\nValue:"))
         .child(edit);
+    let on_save_button = on_save.clone();
     let dialog = Dialog::around(ResizedView::with_min_width(50, body))
         .title(title)
-        .button("Save", on_save)
+        .button("Save", move |s| on_save_button(s))
         .button("Cancel", {
             let state = state.clone();
             move |s| show_provider_menu(s, state.clone(), slot)
@@ -427,7 +498,7 @@ fn edit_provider_field(
 }
 
 // ---------------------------------------------------------------------------
-// Model picker (`--model-list` output, `/`-to-filter)
+// Model picker (`--model-list` output)
 // ---------------------------------------------------------------------------
 
 fn show_model_picker(siv: &mut Cursive, state: Arc<Mutex<State>>) {
@@ -446,6 +517,9 @@ fn show_model_picker(siv: &mut Cursive, state: Arc<Mutex<State>>) {
     };
     let rows = Arc::new(rows);
 
+    // Load the current value from the config
+    let current = state.lock().unwrap().config.model.clone();
+
     let mut select: SelectView<String> = SelectView::new();
     populate_models(&mut select, &rows, "");
     let state_for_submit = state.clone();
@@ -456,6 +530,7 @@ fn show_model_picker(siv: &mut Cursive, state: Arc<Mutex<State>>) {
     let select = select.with_name(MODEL_LIST_NAME);
 
     let filter_edit = EditView::new()
+        .content(current)
         .on_edit({
             let rows = rows.clone();
             move |s, content, _cursor| {
@@ -475,11 +550,15 @@ fn show_model_picker(siv: &mut Cursive, state: Arc<Mutex<State>>) {
 
     let body = LinearLayout::vertical()
         .child(TextView::new(
-            "Press `/` to search, Enter to confirm filter, then ↑/↓ or j/k to pick. \
+            "Type to filter, enter to confirm filter, then ↑/↓ or j/k to pick. \
              Esc cancels.",
         ))
         .child(Panel::new(filter_edit).title("filter"))
-        .child(vim_keys_named::<SelectView<String>>(select).scrollable().min_height(15));
+        .child(
+            vim_keys_named::<SelectView<String>>(select)
+                .scrollable()
+                .min_height(15),
+        );
 
     let state_back = state.clone();
     let dialog = Dialog::around(ResizedView::with_min_width(60, body))
@@ -507,12 +586,7 @@ fn populate_models(select: &mut SelectView<String>, rows: &[Row], filter: &str) 
         if !needle.is_empty() && !row.qualified.to_lowercase().contains(&needle) {
             continue;
         }
-        let label = format!(
-            "{:<w$}  {}",
-            row.qualified,
-            row.price_label(),
-            w = label_w
-        );
+        let label = format!("{:<w$}  {}", row.qualified, row.price_label(), w = label_w);
         select.add_item(label, row.qualified.clone());
     }
 }
@@ -558,11 +632,10 @@ fn save_and_notify(siv: &mut Cursive, state: &Arc<Mutex<State>>) {
     match st.config.save(&st.path) {
         Ok(()) => {
             let path = st.path.display().to_string();
-            siv.add_layer(
-                Dialog::text(format!("Saved to {path}")).button("OK", |s| {
-                    s.pop_layer();
-                }),
-            );
+            siv.add_layer(Dialog::text(format!("Saved to {path}")).button("OK", |s| {
+                s.pop_layer();
+                s.quit()
+            }));
         }
         Err(e) => {
             siv.add_layer(Dialog::info(format!("Save failed: {e:#}")));

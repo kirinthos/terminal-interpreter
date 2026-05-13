@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
         return init_tui::run(path, config);
     }
 
-    let shell_ctx = shell::ShellContext::detect(config.history_read_limit)?;
+    let shell_ctx = shell::ShellContext::detect()?;
     let command = llm_client::generate_command(&config, &shell_ctx, &cli.input()).await?;
 
     println!("{command}");

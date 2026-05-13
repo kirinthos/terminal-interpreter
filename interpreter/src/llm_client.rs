@@ -1,7 +1,9 @@
-use anyhow::Result;
+use anyhow::{anyhow, bail, Context, Result};
+use llm::builder::{LLMBackend, LLMBuilder};
+use llm::chat::ChatMessage;
 
-use crate::config::Config;
-use crate::shell::ShellContext;
+use crate::config::{Config, ProviderEnv};
+use crate::shell::{self, ShellContext};
 
 const DEFAULT_SYSTEM_PROMPT: &str = include_str!("prompts/default_system.md");
 
@@ -32,11 +34,10 @@ fn build_user_prompt(shell: &ShellContext, input: &str, history_limit: usize) ->
     if let Some(cwd) = &shell.cwd {
         buf.push_str(&format!("cwd: {}\n", cwd.display()));
     }
-    let history_start = shell.history.len().saturating_sub(history_limit);
-    let history = &shell.history[history_start..];
+    let history = shell::read_history(shell.kind, history_limit);
     if !history.is_empty() {
         buf.push_str("recent history:\n");
-        for line in history {
+        for line in &history {
             buf.push_str("  ");
             buf.push_str(line);
             buf.push('\n');
@@ -47,23 +48,60 @@ fn build_user_prompt(shell: &ShellContext, input: &str, history_limit: usize) ->
     buf
 }
 
-/// Thin shim around the `llm` crate. Filled in once the provider routing API
-/// is locked down; for now this is a structural placeholder that compiles and
-/// fails loudly at runtime so the rest of the binary can be exercised.
+/// Route the request through the `llm` crate. Provider, model, API key and
+/// (optional) temperature come from the resolved `Config`; the system prompt
+/// and rendered user prompt come from the caller.
 async fn call_llm(
     provider: &str,
     model: &str,
-    _system_prompt: &str,
-    _user_prompt: &str,
-    _config: &Config,
+    system_prompt: &str,
+    user_prompt: &str,
+    config: &Config,
 ) -> Result<String> {
-    // TODO: wire this to `llm::builder()` (or whichever entrypoint the chosen
-    //       version of the crate exposes) using `_config.providers.{provider}`
-    //       for API keys / base URLs and `_config.temperature` for sampling.
-    anyhow::bail!(
-        "LLM routing not yet implemented (requested {provider}/{model}). \
-         Wire `llm_client::call_llm` to the `llm` crate."
-    );
+    let provider_key = provider.to_ascii_lowercase();
+    let backend = match provider_key.as_str() {
+        "openai" => LLMBackend::OpenAI,
+        "anthropic" => LLMBackend::Anthropic,
+        "ollama" => LLMBackend::Ollama,
+        other => bail!(
+            "unsupported provider `{other}` — known: openai, anthropic, ollama"
+        ),
+    };
+
+    let provider_env: Option<&ProviderEnv> = match provider_key.as_str() {
+        "openai" => config.providers.openai.as_ref(),
+        "anthropic" => config.providers.anthropic.as_ref(),
+        "ollama" => config.providers.ollama.as_ref(),
+        _ => None,
+    };
+
+    let mut builder = LLMBuilder::new()
+        .backend(backend)
+        .model(model)
+        .system(system_prompt);
+
+    if let Some(env) = provider_env {
+        if let Some(key) = env.api_key.as_deref() {
+            builder = builder.api_key(key);
+        }
+    }
+    if let Some(t) = config.temperature {
+        builder = builder.temperature(t);
+    }
+
+    let llm = builder
+        .build()
+        .map_err(|e| anyhow!("building {provider_key} client for {model}: {e}"))?;
+
+    let messages = vec![ChatMessage::user().content(user_prompt).build()];
+    let response = llm
+        .chat(&messages)
+        .await
+        .map_err(|e| anyhow!("chat request to {provider_key}/{model}: {e}"))?;
+
+    response
+        .text()
+        .context("LLM response had no text payload")
 }
 
 /// Strip code fences and leading/trailing whitespace; LLMs frequently wrap
@@ -92,9 +130,4 @@ mod tests {
         assert_eq!(sanitize("```\necho hi\n```".into()), "echo hi");
     }
 
-    // Silence unused-warning for `_` params on `call_llm` until it's wired up.
-    #[allow(dead_code)]
-    fn _ensure_call_llm_is_referenced() {
-        let _ = call_llm;
-    }
 }

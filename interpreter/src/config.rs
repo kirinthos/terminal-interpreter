@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::cli::Cli;
 
 const DEFAULT_HISTORY_LIMIT: usize = 50;
-const DEFAULT_HISTORY_READ_LIMIT: usize = 1000;
 
 /// On-disk configuration. Loaded from JSON, then mutated by CLI overrides.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,14 +15,10 @@ pub struct Config {
     #[serde(default = "default_model")]
     pub model: String,
 
-    /// How many lines of shell history to send as context to the LLM.
+    /// How many lines of shell history to read off the tail of the history
+    /// file and include in the prompt. Read fresh on every invocation.
     #[serde(default = "default_history_limit")]
     pub history_limit: usize,
-
-    /// How many lines to read from the shell history file. The tail is read
-    /// efficiently (no full-file load); only the last N lines are kept.
-    #[serde(default = "default_history_read_limit")]
-    pub history_read_limit: usize,
 
     /// Sampling temperature, if the provider supports it.
     #[serde(default)]
@@ -59,7 +54,6 @@ impl Default for Config {
         Self {
             model: default_model(),
             history_limit: default_history_limit(),
-            history_read_limit: default_history_read_limit(),
             temperature: None,
             system_prompt: None,
             providers: ProviderSettings::default(),
@@ -111,10 +105,6 @@ fn default_history_limit() -> usize {
     DEFAULT_HISTORY_LIMIT
 }
 
-fn default_history_read_limit() -> usize {
-    DEFAULT_HISTORY_READ_LIMIT
-}
-
 pub fn default_config_path() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", "interpreter")
         .map(|dirs| dirs.config_dir().join("config.json"))
@@ -144,7 +134,6 @@ mod tests {
         let cfg: Config = serde_json::from_str("{}").unwrap();
         assert_eq!(cfg.model, default_model());
         assert_eq!(cfg.history_limit, DEFAULT_HISTORY_LIMIT);
-        assert_eq!(cfg.history_read_limit, DEFAULT_HISTORY_READ_LIMIT);
         assert!(cfg.temperature.is_none());
     }
 
@@ -153,7 +142,6 @@ mod tests {
         let raw = r#"{
             "model": "anthropic/claude-opus-4-7",
             "history_limit": 25,
-            "history_read_limit": 500,
             "temperature": 0.2,
             "system_prompt": "be terse",
             "providers": {
@@ -163,7 +151,6 @@ mod tests {
         let cfg: Config = serde_json::from_str(raw).unwrap();
         assert_eq!(cfg.model, "anthropic/claude-opus-4-7");
         assert_eq!(cfg.history_limit, 25);
-        assert_eq!(cfg.history_read_limit, 500);
         assert_eq!(cfg.temperature, Some(0.2));
         assert_eq!(cfg.system_prompt.as_deref(), Some("be terse"));
         assert_eq!(

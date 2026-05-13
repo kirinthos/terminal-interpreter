@@ -17,6 +17,7 @@ use interpreter::config::Config;
 use interpreter::llm_client;
 use interpreter::shell::{ShellContext, ShellKind};
 
+
 struct Case {
     prompt: &'static str,
     accept: &'static [&'static str],
@@ -75,7 +76,6 @@ fn fixture_shell() -> ShellContext {
         kind: ShellKind::Bash,
         cwd: None,
         os: "linux",
-        history: Vec::new(),
     }
 }
 

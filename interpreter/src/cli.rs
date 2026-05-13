@@ -23,9 +23,10 @@ pub struct Cli {
     #[arg(short, long, value_name = "PROVIDER/MODEL")]
     pub model: Option<String>,
 
-    /// Path to a configuration file. Defaults to the platform config dir
-    /// (e.g. `$XDG_CONFIG_HOME/termhelp/config.toml`).
-    #[arg(short, long, value_name = "PATH")]
+    /// Path to a configuration file. Reads `$INTERPRETER_CONFIG` when unset;
+    /// otherwise falls back to the platform config dir
+    /// (e.g. `$XDG_CONFIG_HOME/interpreter/config.json`).
+    #[arg(short, long, value_name = "PATH", env = "INTERPRETER_CONFIG")]
     pub config: Option<PathBuf>,
 
     /// Print the resolved configuration and exit without calling the LLM.

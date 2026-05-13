@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-/// Snapshot of the shell environment we send to the LLM.
+/// Snapshot of the shell environment we send to the LLM. History is read
+/// lazily at prompt-build time via [`read_history`], so this struct stays
+/// cheap to construct and reflects the freshest history on every call.
 #[derive(Debug, Clone)]
 pub struct ShellContext {
     pub kind: ShellKind,
     pub cwd: Option<PathBuf>,
     pub os: &'static str,
-    pub history: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,37 +48,36 @@ impl ShellKind {
 
 impl ShellContext {
     /// Build a snapshot of the current shell environment.
-    ///
-    /// `history_read_limit` caps how many lines are pulled off the end of the
-    /// shell's history file. Reading is done by seeking from the end of the
-    /// file, so the cost is bounded by the requested tail size rather than
-    /// the total file length.
-    pub fn detect(history_read_limit: usize) -> Result<Self> {
-        let kind = ShellKind::detect();
-        let cwd = std::env::current_dir().ok();
-        let history = read_history(kind, history_read_limit).unwrap_or_default();
+    pub fn detect() -> Result<Self> {
         Ok(Self {
-            kind,
-            cwd,
+            kind: ShellKind::detect(),
+            cwd: std::env::current_dir().ok(),
             os: std::env::consts::OS,
-            history,
         })
     }
 }
 
-/// Best-effort history read. Each shell stores it differently; failures are
-/// non-fatal because the LLM call can proceed without history.
-fn read_history(kind: ShellKind, limit: usize) -> Result<Vec<String>> {
-    let path = history_path(kind)?;
-    let raw = read_tail_lines(&path, limit)?;
-    let lines: Vec<String> = match kind {
+/// Best-effort history read. Returns the last `limit` lines from the shell's
+/// history file, or an empty vec if the file can't be found / read. Reading
+/// is done by seeking from the end of the file, so the cost is bounded by
+/// `limit` rather than total file length.
+///
+/// Called at prompt-build time so the freshest history is captured on every
+/// invocation, even if the user just ran a command.
+pub fn read_history(kind: ShellKind, limit: usize) -> Vec<String> {
+    let Ok(path) = history_path(kind) else {
+        return Vec::new();
+    };
+    let Ok(raw) = read_tail_lines(&path, limit) else {
+        return Vec::new();
+    };
+    match kind {
         ShellKind::Zsh => raw
             .lines()
             .map(|l| l.splitn(2, ';').nth(1).unwrap_or(l).to_string())
             .collect(),
         _ => raw.lines().map(str::to_string).collect(),
-    };
-    Ok(lines)
+    }
 }
 
 /// Read the last `limit` newline-terminated lines from a file without loading
