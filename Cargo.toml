@@ -5,7 +5,7 @@ members = ["interpreter"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/kirinthos/termhelp"
+repository = "https://github.com/kirinthos/terminal-interpreter"
 
 [workspace.lints.clippy]
 dbg_macro = "warn"

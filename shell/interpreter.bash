@@ -1,8 +1,8 @@
-# termhelp / interpreter — bash integration
+# terminal-interpreter / interpreter — bash integration
 #
 # Source this file from ~/.bashrc:
 #
-#     source /path/to/termhelp/shell/interpreter.bash
+#     source /path/to/terminal-interpreter/shell/interpreter.bash
 #
 # Press Ctrl-G on the command line to send the current readline buffer to
 # `interpreter` and replace it in-place. Rebind by exporting

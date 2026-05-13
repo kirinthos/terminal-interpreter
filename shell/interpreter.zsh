@@ -1,8 +1,8 @@
-# termhelp / interpreter — zsh integration
+# terminal-interpreter / interpreter — zsh integration
 #
 # Source this file from ~/.zshrc:
 #
-#     source /path/to/termhelp/shell/interpreter.zsh
+#     source /path/to/terminal-interpreter/shell/interpreter.zsh
 #
 # Press Ctrl-G on the command line to send the current buffer to
 # `interpreter` and replace it in-place with the generated command.
@@ -15,24 +15,33 @@
 _interpreter_widget() {
   emulate -L zsh
   local input=$BUFFER
-  local cursor=$CURSOR
 
-  # Show a hint while we wait; zle -R repaints the prompt area.
+  # `zle -R msg` shows a transient status below the prompt.
   zle -R "interpreter: thinking…"
 
-  local output
-  if ! output=$("$INTERPRETER_BIN" --config "$INTERPRETER_CONFIG" -- "$input" 2>/dev/null); then
-    zle -M "interpreter: failed (exit $?)"
+  local output rc
+  output=$("$INTERPRETER_BIN" --config "$INTERPRETER_CONFIG" -- "$input" 2>/dev/null)
+  rc=$?
+
+  # Always force a full redraw before mutating BUFFER or printing messages,
+  # otherwise the "thinking…" status line bleeds into the new prompt.
+  if (( rc != 0 )); then
+    zle reset-prompt
+    zle -M "interpreter: failed (exit $rc)"
     return 1
   fi
 
   # Trim trailing newline; the binary prints exactly one line.
   output=${output%$'\n'}
-  [[ -z $output ]] && { zle -M "interpreter: empty response"; return 1 }
+  if [[ -z $output ]]; then
+    zle reset-prompt
+    zle -M "interpreter: empty response"
+    return 1
+  fi
 
   BUFFER=$output
   CURSOR=${#BUFFER}
-  zle -R
+  zle reset-prompt
 }
 
 zle -N _interpreter_widget

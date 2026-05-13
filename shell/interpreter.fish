@@ -1,9 +1,9 @@
-# termhelp / interpreter — fish integration
+# terminal-interpreter / interpreter — fish integration
 #
 # Source this file from ~/.config/fish/config.fish (or drop it in
 # ~/.config/fish/conf.d/ to autoload):
 #
-#     source /path/to/termhelp/shell/interpreter.fish
+#     source /path/to/terminal-interpreter/shell/interpreter.fish
 #
 # Press Ctrl-G on the command line to send the current buffer to
 # `interpreter` and replace it in-place. Rebind by setting

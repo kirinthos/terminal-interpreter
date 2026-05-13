@@ -1,6 +1,6 @@
 ## Project
 
-`termhelp` — a terminal helper that turns a terminal command into a prompt which generates a terminal command (per `README.md`).
+`terminal-interpreter` — a terminal helper that turns a terminal command into a prompt which generates a terminal command (per `README.md`).
 
 ## Current state
 

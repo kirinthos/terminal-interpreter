@@ -1,9 +1,9 @@
-# termhelp
+# terminal-interpreter
 
 > Turn a half-remembered intent at your shell prompt into the command you
 > actually wanted to type.
 
-`termhelp` is for developers who keep stopping at the prompt to think "how do I
+`terminal-interpreter` is for developers who keep stopping at the prompt to think "how do I
 list files modified in the last 24 hours that contain *foo*?" — and would
 rather just write that sentence and hit a key. The `interpreter` binary takes
 the current command line plus a snapshot of your shell environment (which
@@ -78,8 +78,8 @@ You need a Rust toolchain (edition 2024, currently building on stable). The
 repo ships a Cargo workspace with one member, the `interpreter` crate.
 
 ```sh
-git clone https://github.com/kirinthos/termhelp.git
-cd termhelp
+git clone https://github.com/kirinthos/terminal-interpreter.git
+cd terminal-interpreter
 cargo build --release -p interpreter
 # binary lives at target/release/interpreter
 ```
