@@ -3,7 +3,14 @@ use clap::Parser;
 
 use interpreter::cli::Cli;
 use interpreter::config::{self, Config};
-use interpreter::{init_tui, llm_client, model_list, shell};
+use interpreter::{init_tui, install, llm_client, model_list, shell};
+
+fn resolve_config_path(cli: &Cli) -> Result<std::path::PathBuf> {
+    cli.config
+        .clone()
+        .or_else(config::default_config_path)
+        .ok_or_else(|| anyhow::anyhow!("could not determine a config path; pass --config"))
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -22,13 +29,12 @@ async fn main() -> Result<()> {
         return model_list::run();
     }
 
+    if cli.install {
+        return install::run(resolve_config_path(&cli)?, config);
+    }
+
     if cli.init {
-        let path = cli
-            .config
-            .clone()
-            .or_else(config::default_config_path)
-            .ok_or_else(|| anyhow::anyhow!("could not determine a config path; pass --config"))?;
-        return init_tui::run(path, config);
+        return init_tui::run(resolve_config_path(&cli)?, config);
     }
 
     let shell_ctx = shell::ShellContext::detect()?;

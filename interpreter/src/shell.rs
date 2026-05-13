@@ -32,7 +32,7 @@ impl ShellKind {
         }
     }
 
-    fn detect() -> Self {
+    pub fn detect() -> Self {
         let Ok(shell) = std::env::var("SHELL") else {
             return Self::Unknown;
         };

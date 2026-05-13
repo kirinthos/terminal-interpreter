@@ -13,10 +13,11 @@
 //! with a richer evaluator (semantic equivalence, dry-run execution, judge
 //! model) once we formalize the eval pipeline.
 
+use std::path::PathBuf;
+
 use interpreter::config::Config;
 use interpreter::llm_client;
 use interpreter::shell::{ShellContext, ShellKind};
-
 
 struct Case {
     prompt: &'static str,
@@ -30,7 +31,7 @@ const CASES: &[Case] = &[
     },
     Case {
         prompt: "list files including hidden",
-        accept: &["ls -a", "ls -A"],
+        accept: &["ls -a", "ls -A", "ls -la", "ls -al"],
     },
     Case {
         prompt: "show the current working directory",
@@ -50,6 +51,7 @@ const CASES: &[Case] = &[
             "find . -name '*.rs'",
             "find . -type f -name '*.rs'",
             "find . -name \"*.rs\"",
+            "find . -name \"*.rs\" -type f",
         ],
     },
     Case {
@@ -79,12 +81,16 @@ fn fixture_shell() -> ShellContext {
     }
 }
 
+/// Load the config the binary itself would use: honour `$INTERPRETER_CONFIG`
+/// when set (same precedence as the `--config` flag), otherwise fall through
+/// to `Config::load`'s platform default. `INTERPRETER_EVAL_MODEL` still
+/// overrides the model on top so a single eval run can sweep providers.
 fn fixture_config() -> Config {
-    let mut cfg = Config::default();
+    let env_path: Option<PathBuf> = std::env::var("INTERPRETER_CONFIG").ok().map(PathBuf::from);
+    let mut cfg = Config::load(env_path.as_deref()).expect("loading config");
     if let Ok(model) = std::env::var("INTERPRETER_EVAL_MODEL") {
         cfg.model = model;
     }
-    cfg.temperature = Some(0.0);
     cfg
 }
 

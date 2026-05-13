@@ -42,6 +42,12 @@ pub struct Cli {
     /// Launch the configuration TUI to edit the config file interactively.
     #[arg(long)]
     pub init: bool,
+
+    /// Install the shell integration for the current shell into the config
+    /// directory, run the configuration TUI, then print the rc-file source
+    /// command and usage hint.
+    #[arg(long)]
+    pub install: bool,
 }
 
 impl Cli {

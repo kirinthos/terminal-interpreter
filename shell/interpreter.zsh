@@ -20,9 +20,6 @@ _interpreter_widget() {
   # Show a hint while we wait; zle -R repaints the prompt area.
   zle -R "interpreter: thinking…"
 
-  echo $INTERPRETER_BIN
-  sleep 1
-
   local output
   if ! output=$("$INTERPRETER_BIN" --config "$INTERPRETER_CONFIG" -- "$input" 2>/dev/null); then
     zle -M "interpreter: failed (exit $?)"
