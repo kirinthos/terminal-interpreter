@@ -116,7 +116,7 @@ fn default_history_read_limit() -> usize {
 }
 
 fn default_config_path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("com", "termhelp", "termhelp")
+    directories::ProjectDirs::from("", "", "interpreter")
         .map(|dirs| dirs.config_dir().join("config.json"))
 }
 

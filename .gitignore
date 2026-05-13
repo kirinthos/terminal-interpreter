@@ -1,1 +1,5 @@
+# Rust artifacts
 target/
+
+# Development configuration file
+dev-config.json

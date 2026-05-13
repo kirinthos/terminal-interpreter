@@ -1,0 +1,14 @@
+{
+  "model": "openai/gpt-4o-mini",
+  "history_limit": 50,
+  "history_read_limit": 1000,
+  "temperature": 0.0,
+  "providers": {
+    "openai": {
+      "api_key": null
+    },
+    "anthropic": {
+      "api_key": null
+    }
+  }
+}

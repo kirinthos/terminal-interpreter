@@ -10,6 +10,7 @@
 
 : ${INTERPRETER_BIN:=interpreter}
 : ${INTERPRETER_KEY:=^G}
+: ${INTERPRETER_CONFIG:=$HOME/.config/interpreter/config.json}
 
 _interpreter_widget() {
   emulate -L zsh
@@ -23,7 +24,7 @@ _interpreter_widget() {
   sleep 1
 
   local output
-  if ! output=$("$INTERPRETER_BIN" -- "$input" 2>/dev/null); then
+  if ! output=$("$INTERPRETER_BIN" --config "$INTERPRETER_CONFIG" -- "$input" 2>/dev/null); then
     zle -M "interpreter: failed (exit $?)"
     return 1
   fi

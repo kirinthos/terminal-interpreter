@@ -11,10 +11,11 @@
 
 set -q INTERPRETER_BIN; or set -g INTERPRETER_BIN interpreter
 set -q INTERPRETER_KEY; or set -g INTERPRETER_KEY \cg
+set -q INTERPRETER_CONFIG; or set -g INTERPRETER_CONFIG "$HOME/.config/interpreter/config.json"
 
 function _interpreter_widget
     set -l input (commandline)
-    set -l output ($INTERPRETER_BIN -- "$input" 2>/dev/null)
+    set -l output ($INTERPRETER_BIN --config "$INTERPRETER_CONFIG" -- "$input" 2>/dev/null)
     or return 1
     test -z "$output"; and return 1
 

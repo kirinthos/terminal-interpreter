@@ -10,11 +10,12 @@
 
 : "${INTERPRETER_BIN:=interpreter}"
 : "${INTERPRETER_KEY:=\"\\C-g\"}"
+: "${INTERPRETER_CONFIG:=$HOME/.config/interpreter/config.json}"
 
 _interpreter_widget() {
   local input=$READLINE_LINE
   local output
-  if ! output=$("$INTERPRETER_BIN" -- "$input" 2>/dev/null); then
+  if ! output=$("$INTERPRETER_BIN" --config "$INTERPRETER_CONFIG" -- "$input" 2>/dev/null); then
     return 1
   fi
   output=${output%$'\n'}
