@@ -74,7 +74,7 @@ pub fn read_history(kind: ShellKind, limit: usize) -> Vec<String> {
     match kind {
         ShellKind::Zsh => raw
             .lines()
-            .map(|l| l.splitn(2, ';').nth(1).unwrap_or(l).to_string())
+            .map(|l| l.split_once(';').map_or(l, |x| x.1).to_string())
             .collect(),
         _ => raw.lines().map(str::to_string).collect(),
     }

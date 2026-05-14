@@ -158,6 +158,7 @@ fn per_mtok(per_token: f64) -> f64 {
     per_token * 1_000_000.0
 }
 
+#[allow(clippy::print_stdout, clippy::print_stderr)]
 fn print_rows(rows: &[Row]) {
     if rows.is_empty() {
         eprintln!("no models found");

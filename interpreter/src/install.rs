@@ -77,12 +77,15 @@ pub fn run(config_path: PathBuf, config: Config) -> Result<()> {
     std::fs::write(&script_path, install.script)
         .with_context(|| format!("writing {}", script_path.display()))?;
 
-    eprintln!(
-        "interpreter: installed {} integration to {}",
-        install.pretty,
-        script_path.display()
-    );
-    eprintln!("interpreter: launching configuration TUI…");
+    #[allow(clippy::print_stderr)]
+    {
+        eprintln!(
+            "interpreter: installed {} integration to {}",
+            install.pretty,
+            script_path.display()
+        );
+        eprintln!("interpreter: launching configuration TUI…");
+    }
 
     init_tui::run(config_path, config)?;
 
@@ -90,6 +93,7 @@ pub fn run(config_path: PathBuf, config: Config) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::print_stdout)]
 fn print_post_install(install: &ShellInstall, script_path: &Path) {
     let home = std::env::var("HOME").unwrap_or_else(|_| "$HOME".to_string());
     let rc_path = PathBuf::from(&home).join(install.rc_relative);

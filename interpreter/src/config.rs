@@ -28,6 +28,15 @@ pub struct Config {
     #[serde(default)]
     pub system_prompt: Option<String>,
 
+    /// Extra freeform text appended to the system prompt on every request.
+    #[serde(default)]
+    pub additional_context: Option<String>,
+
+    /// Paths to files whose contents are injected into the system prompt as
+    /// high-priority context on every request.
+    #[serde(default)]
+    pub context_files: Vec<PathBuf>,
+
     /// Per-provider environment settings (API keys, base URLs, etc.).
     #[serde(default)]
     pub providers: ProviderSettings,
@@ -56,6 +65,8 @@ impl Default for Config {
             history_limit: default_history_limit(),
             temperature: None,
             system_prompt: None,
+            additional_context: None,
+            context_files: Vec::new(),
             providers: ProviderSettings::default(),
         }
     }
@@ -113,11 +124,11 @@ pub fn default_config_path() -> Option<PathBuf> {
 impl Config {
     /// Write the config as pretty-printed JSON, creating parent dirs as needed.
     pub fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("creating {}", parent.display()))?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
         }
         let body = serde_json::to_string_pretty(self).context("serializing config")?;
         std::fs::write(path, body).with_context(|| format!("writing {}", path.display()))?;

@@ -17,7 +17,8 @@ use cursive::theme::{BorderStyle, Color, PaletteColor};
 use cursive::traits::*;
 use cursive::view::Nameable;
 use cursive::views::{
-    Dialog, EditView, LinearLayout, OnEventView, Panel, ResizedView, SelectView, TextView,
+    Dialog, EditView, LinearLayout, OnEventView, Panel, ResizedView, SelectView, TextArea,
+    TextView,
 };
 
 use crate::config::{Config, ProviderEnv};
@@ -97,6 +98,8 @@ enum Field {
     HistoryLimit,
     Temperature,
     SystemPrompt,
+    AdditionalContext,
+    ContextFiles,
     OpenAi,
     Anthropic,
     Ollama,
@@ -109,6 +112,8 @@ impl Field {
             Self::HistoryLimit => "history_limit",
             Self::Temperature => "temperature",
             Self::SystemPrompt => "system_prompt",
+            Self::AdditionalContext => "additional_context",
+            Self::ContextFiles => "context_files",
             Self::OpenAi => "providers.openai",
             Self::Anthropic => "providers.anthropic",
             Self::Ollama => "providers.ollama",
@@ -128,6 +133,12 @@ impl Field {
             Self::SystemPrompt => {
                 "Override the system prompt sent to the model. Leave blank for the default."
             }
+            Self::AdditionalContext => {
+                "Extra text appended to the system prompt on every request. Leave blank to omit."
+            }
+            Self::ContextFiles => {
+                "File paths whose contents are injected as high-priority context into the system prompt."
+            }
             Self::OpenAi => "OpenAI provider settings: api_key, base_url.",
             Self::Anthropic => "Anthropic provider settings: api_key, base_url.",
             Self::Ollama => "Ollama provider settings: api_key (usually unset), base_url.",
@@ -140,6 +151,8 @@ const FIELDS: &[Field] = &[
     Field::HistoryLimit,
     Field::Temperature,
     Field::SystemPrompt,
+    Field::AdditionalContext,
+    Field::ContextFiles,
     Field::OpenAi,
     Field::Anthropic,
     Field::Ollama,
@@ -197,6 +210,14 @@ fn handle_field(siv: &mut Cursive, state: Arc<Mutex<State>>, field: Field) {
             state.lock().unwrap().config.system_prompt.clone(),
             |c, v| c.system_prompt = v,
         ),
+        Field::AdditionalContext => edit_multiline_string(
+            siv,
+            state.clone(),
+            field,
+            state.lock().unwrap().config.additional_context.clone(),
+            |c, v| c.additional_context = v,
+        ),
+        Field::ContextFiles => edit_context_files(siv, state),
         Field::OpenAi => show_provider_menu(siv, state, ProviderSlot::OpenAi),
         Field::Anthropic => show_provider_menu(siv, state, ProviderSlot::Anthropic),
         Field::Ollama => show_provider_menu(siv, state, ProviderSlot::Ollama),
@@ -339,6 +360,161 @@ fn edit_optional_string(
         .child(edit);
     let on_save_button = on_save.clone();
     push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
+}
+
+fn edit_multiline_string(
+    siv: &mut Cursive,
+    state: Arc<Mutex<State>>,
+    field: Field,
+    current: Option<String>,
+    apply: impl Fn(&mut Config, Option<String>) + Send + Sync + 'static,
+) {
+    let input_name = "ml_input";
+    let state2 = state.clone();
+    let apply = Arc::new(apply);
+
+    let on_save: SubmitFn = Arc::new(move |s: &mut Cursive| {
+        let raw: String = s
+            .call_on_name(input_name, |v: &mut TextArea| v.get_content().to_string())
+            .unwrap_or_default();
+        let value = if raw.trim().is_empty() {
+            None
+        } else {
+            Some(raw)
+        };
+        apply(&mut state2.lock().unwrap().config, value);
+        show_main_menu(s, state2.clone());
+    });
+
+    let mut textarea = TextArea::new();
+    textarea.set_content(current.unwrap_or_default());
+    let textarea = textarea.with_name(input_name).min_size((60, 10));
+
+    let body = LinearLayout::vertical()
+        .child(TextView::new(field.description()))
+        .child(TextView::new("\nValue (blank to unset):"))
+        .child(textarea);
+    let on_save_button = on_save.clone();
+    push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
+}
+
+const CONTEXT_FILES_LIST: &str = "context_files_list";
+
+fn edit_context_files(siv: &mut Cursive, state: Arc<Mutex<State>>) {
+    let current: Vec<String> = state
+        .lock()
+        .unwrap()
+        .config
+        .context_files
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect();
+
+    let mut list: SelectView<String> = SelectView::new();
+    for path in &current {
+        list.add_item(path.clone(), path.clone());
+    }
+    let list = vim_keys(list.with_name(CONTEXT_FILES_LIST));
+
+    let state_add = state.clone();
+    let state_remove = state.clone();
+    let state_save = state.clone();
+    let state_cancel = state.clone();
+
+    let body = LinearLayout::vertical()
+        .child(TextView::new(
+            "File paths injected as high-priority context. \
+             Add paths one at a time; select and Remove to delete.",
+        ))
+        .child(TextView::new(""))
+        .child(list.scrollable().min_height(8));
+
+    let dialog = Dialog::around(ResizedView::with_min_width(60, body))
+        .title("context_files")
+        .button("Add", move |s| {
+            show_add_context_file(s, state_add.clone());
+        })
+        .button("Remove", move |s| {
+            let selected: Option<String> = s
+                .call_on_name(CONTEXT_FILES_LIST, |v: &mut SelectView<String>| {
+                    v.selection().map(|arc| (*arc).clone())
+                })
+                .flatten();
+            if let Some(path) = selected {
+                {
+                    let mut st = state_remove.lock().unwrap();
+                    st.config
+                        .context_files
+                        .retain(|p| p.display().to_string() != path);
+                }
+                s.call_on_name(CONTEXT_FILES_LIST, |v: &mut SelectView<String>| {
+                    let idx = v.iter().position(|(_, val)| val == &path);
+                    if let Some(idx) = idx {
+                        v.remove_item(idx);
+                    }
+                });
+            }
+        })
+        .button("Save", move |s| {
+            save_and_notify(s, &state_save);
+        })
+        .button("Back", move |s| show_main_menu(s, state_cancel.clone()));
+
+    let state_esc = state.clone();
+    let wrapped = OnEventView::new(dialog).on_event(Event::Key(Key::Esc), move |s| {
+        show_main_menu(s, state_esc.clone())
+    });
+    siv.pop_layer();
+    siv.add_layer(wrapped);
+}
+
+fn show_add_context_file(siv: &mut Cursive, state: Arc<Mutex<State>>) {
+    let input_name = "new_file_path";
+    let state2 = state.clone();
+
+    let on_add: SubmitFn = Arc::new(move |s: &mut Cursive| {
+        let raw: String = s
+            .call_on_name(input_name, |v: &mut EditView| v.get_content().to_string())
+            .unwrap_or_default();
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            let path = std::path::PathBuf::from(trimmed);
+            let path_str = path.display().to_string();
+            {
+                let mut st = state2.lock().unwrap();
+                if !st.config.context_files.contains(&path) {
+                    st.config.context_files.push(path);
+                }
+            }
+            s.call_on_name(CONTEXT_FILES_LIST, |v: &mut SelectView<String>| {
+                v.add_item(path_str.clone(), path_str);
+            });
+        }
+        s.pop_layer();
+    });
+
+    let edit = EditView::new()
+        .on_submit({
+            let on_add = on_add.clone();
+            move |s, _| on_add(s)
+        })
+        .with_name(input_name)
+        .full_width();
+
+    let body = LinearLayout::vertical()
+        .child(TextView::new("Enter the absolute path to the file:"))
+        .child(TextView::new(""))
+        .child(edit);
+
+    let on_add_button = on_add.clone();
+    let dialog = Dialog::around(ResizedView::with_min_width(60, body))
+        .title("Add context file")
+        .button("Add", move |s| on_add_button(s))
+        .button("Cancel", |s| {
+            s.pop_layer();
+        });
+
+    siv.add_layer(dialog);
 }
 
 fn push_detail<V: cursive::view::View>(

@@ -40,6 +40,9 @@ async fn main() -> Result<()> {
     let shell_ctx = shell::ShellContext::detect()?;
     let command = llm_client::generate_command(&config, &shell_ctx, &cli.input()).await?;
 
-    println!("{command}");
+    #[allow(clippy::print_stdout)]
+    {
+        println!("{command}");
+    }
     Ok(())
 }

@@ -17,14 +17,50 @@ pub async fn generate_command(
     input: &str,
 ) -> Result<String> {
     let (provider, model) = config.provider_and_model()?;
-    let system_prompt = config
+    let base = config
         .system_prompt
         .as_deref()
         .unwrap_or(DEFAULT_SYSTEM_PROMPT);
+    let system_prompt = build_system_prompt(base, config);
     let user_prompt = build_user_prompt(shell, input, config.history_limit);
 
-    let response = call_llm(provider, model, system_prompt, &user_prompt, config).await?;
+    let response = call_llm(provider, model, &system_prompt, &user_prompt, config).await?;
     Ok(sanitize(response))
+}
+
+fn build_system_prompt(base: &str, config: &Config) -> String {
+    let mut prompt = base.to_string();
+
+    if !config.context_files.is_empty() {
+        prompt.push_str(
+            "\n\nThe user has provided the following files as high-priority context. \
+             Treat their contents as authoritative when deciding what command to generate:\n",
+        );
+        for path in &config.context_files {
+            match std::fs::read_to_string(path) {
+                Ok(contents) => {
+                    prompt.push_str(&format!("\n--- file: {} ---\n", path.display()));
+                    prompt.push_str(&contents);
+                    prompt.push_str("\n---\n");
+                }
+                Err(e) => {
+                    prompt.push_str(&format!(
+                        "\n[Could not read {}: {e}]\n",
+                        path.display()
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(ctx) = &config.additional_context
+        && !ctx.trim().is_empty()
+    {
+        prompt.push_str("\n\n");
+        prompt.push_str(ctx.trim());
+    }
+
+    prompt
 }
 
 fn build_user_prompt(shell: &ShellContext, input: &str, history_limit: usize) -> String {
@@ -80,10 +116,10 @@ async fn call_llm(
         .model(model)
         .system(system_prompt);
 
-    if let Some(env) = provider_env {
-        if let Some(key) = env.api_key.as_deref() {
-            builder = builder.api_key(key);
-        }
+    if let Some(env) = provider_env
+        && let Some(key) = env.api_key.as_deref()
+    {
+        builder = builder.api_key(key);
     }
     if let Some(t) = config.temperature {
         builder = builder.temperature(t);
