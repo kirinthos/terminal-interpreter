@@ -165,7 +165,10 @@ mod tests {
         assert_eq!(cfg.temperature, Some(0.2));
         assert_eq!(cfg.system_prompt.as_deref(), Some("be terse"));
         assert_eq!(
-            cfg.providers.anthropic.as_ref().and_then(|p| p.api_key.as_deref()),
+            cfg.providers
+                .anthropic
+                .as_ref()
+                .and_then(|p| p.api_key.as_deref()),
             Some("sk-...")
         );
     }

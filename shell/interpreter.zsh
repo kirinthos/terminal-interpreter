@@ -10,7 +10,12 @@
 
 : ${INTERPRETER_BIN:=interpreter}
 : ${INTERPRETER_KEY:=^G}
-: ${INTERPRETER_CONFIG:=$HOME/.config/interpreter/config.json}
+if [[ -z ${INTERPRETER_CONFIG+x} ]]; then
+  case "$(uname -s)" in
+    Darwin) INTERPRETER_CONFIG="$HOME/Library/Application Support/interpreter/config.json" ;;
+    *)      INTERPRETER_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/interpreter/config.json" ;;
+  esac
+fi
 
 _interpreter_widget() {
   emulate -L zsh

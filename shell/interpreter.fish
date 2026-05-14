@@ -11,7 +11,13 @@
 
 set -q INTERPRETER_BIN; or set -g INTERPRETER_BIN interpreter
 set -q INTERPRETER_KEY; or set -g INTERPRETER_KEY \cg
-set -q INTERPRETER_CONFIG; or set -g INTERPRETER_CONFIG "$HOME/.config/interpreter/config.json"
+if not set -q INTERPRETER_CONFIG
+  if test (uname -s) = Darwin
+    set -g INTERPRETER_CONFIG "$HOME/Library/Application Support/interpreter/config.json"
+  else
+    set -g INTERPRETER_CONFIG "${XDG_CONFIG_HOME:-$HOME/.config}/interpreter/config.json"
+  end
+end
 
 function _interpreter_widget
     set -l input (commandline)
