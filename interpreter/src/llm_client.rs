@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use llm::builder::{LLMBackend, LLMBuilder};
 use llm::chat::ChatMessage;
 
@@ -44,10 +44,7 @@ fn build_system_prompt(base: &str, config: &Config) -> String {
                     prompt.push_str("\n---\n");
                 }
                 Err(e) => {
-                    prompt.push_str(&format!(
-                        "\n[Could not read {}: {e}]\n",
-                        path.display()
-                    ));
+                    prompt.push_str(&format!("\n[Could not read {}: {e}]\n", path.display()));
                 }
             }
         }
@@ -99,9 +96,7 @@ async fn call_llm(
         "openai" => LLMBackend::OpenAI,
         "anthropic" => LLMBackend::Anthropic,
         "ollama" => LLMBackend::Ollama,
-        other => bail!(
-            "unsupported provider `{other}` — known: openai, anthropic, ollama"
-        ),
+        other => bail!("unsupported provider `{other}` — known: openai, anthropic, ollama"),
     };
 
     let provider_env: Option<&ProviderEnv> = match provider_key.as_str() {
@@ -125,6 +120,8 @@ async fn call_llm(
         builder = builder.temperature(t);
     }
 
+    builder = builder.reasoning(config.thinking);
+
     let llm = builder
         .build()
         .map_err(|e| anyhow!("building {provider_key} client for {model}: {e}"))?;
@@ -135,9 +132,7 @@ async fn call_llm(
         .await
         .map_err(|e| anyhow!("chat request to {provider_key}/{model}: {e}"))?;
 
-    response
-        .text()
-        .context("LLM response had no text payload")
+    response.text().context("LLM response had no text payload")
 }
 
 /// Strip code fences and leading/trailing whitespace; LLMs frequently wrap
@@ -165,5 +160,4 @@ mod tests {
         assert_eq!(sanitize("  ls\n".into()), "ls");
         assert_eq!(sanitize("```\necho hi\n```".into()), "echo hi");
     }
-
 }

@@ -17,8 +17,7 @@ use cursive::theme::{BorderStyle, Color, PaletteColor};
 use cursive::traits::*;
 use cursive::view::Nameable;
 use cursive::views::{
-    Dialog, EditView, LinearLayout, OnEventView, Panel, ResizedView, SelectView, TextArea,
-    TextView,
+    Dialog, EditView, LinearLayout, OnEventView, Panel, ResizedView, SelectView, TextArea, TextView,
 };
 
 use crate::config::{Config, ProviderEnv};
@@ -103,6 +102,7 @@ enum Field {
     OpenAi,
     Anthropic,
     Ollama,
+    Thinking,
 }
 
 impl Field {
@@ -114,6 +114,7 @@ impl Field {
             Self::SystemPrompt => "system_prompt",
             Self::AdditionalContext => "additional_context",
             Self::ContextFiles => "context_files",
+            Self::Thinking => "thinking",
             Self::OpenAi => "providers.openai",
             Self::Anthropic => "providers.anthropic",
             Self::Ollama => "providers.ollama",
@@ -142,6 +143,7 @@ impl Field {
             Self::OpenAi => "OpenAI provider settings: api_key, base_url.",
             Self::Anthropic => "Anthropic provider settings: api_key, base_url.",
             Self::Ollama => "Ollama provider settings: api_key (usually unset), base_url.",
+            Self::Thinking => "Enable model thinking output (e.g., CoT traces). Toggle on/off.",
         }
     }
 }
@@ -156,6 +158,7 @@ const FIELDS: &[Field] = &[
     Field::OpenAi,
     Field::Anthropic,
     Field::Ollama,
+    Field::Thinking,
 ];
 
 // ---------------------------------------------------------------------------
@@ -163,10 +166,18 @@ const FIELDS: &[Field] = &[
 // ---------------------------------------------------------------------------
 
 fn show_main_menu(siv: &mut Cursive, state: Arc<Mutex<State>>) {
+    let thinking = state.lock().unwrap().config.thinking;
     let mut select: SelectView<Field> = SelectView::new();
     let label_w = FIELDS.iter().map(|f| f.label().len()).max().unwrap_or(0);
     for f in FIELDS {
-        let label = format!("{:<w$}  {}", f.label(), f.description(), w = label_w);
+        let desc = match f {
+            Field::Thinking => {
+                let mark = if thinking { "[x]" } else { "[ ]" };
+                format!("{mark}  {}", f.description())
+            }
+            _ => f.description().to_string(),
+        };
+        let label = format!("{:<w$}  {}", f.label(), desc, w = label_w);
         select.add_item(label, *f);
     }
     select.set_on_submit({
@@ -221,6 +232,14 @@ fn handle_field(siv: &mut Cursive, state: Arc<Mutex<State>>, field: Field) {
         Field::OpenAi => show_provider_menu(siv, state, ProviderSlot::OpenAi),
         Field::Anthropic => show_provider_menu(siv, state, ProviderSlot::Anthropic),
         Field::Ollama => show_provider_menu(siv, state, ProviderSlot::Ollama),
+        Field::Thinking => {
+            state.lock().unwrap().config.thinking ^= true;
+            let idx = FIELDS.iter().position(|f| matches!(f, Field::Thinking)).unwrap();
+            show_main_menu(siv, state);
+            siv.call_on_name("main_menu", |select: &mut SelectView<Field>| {
+                select.set_selection(idx);
+            });
+        }
     }
 }
 
@@ -397,6 +416,7 @@ fn edit_multiline_string(
     let on_save_button = on_save.clone();
     push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
 }
+
 
 const CONTEXT_FILES_LIST: &str = "context_files_list";
 
