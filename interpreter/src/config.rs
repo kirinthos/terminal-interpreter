@@ -41,6 +41,11 @@ pub struct Config {
     #[serde(default)]
     pub context_files: Vec<PathBuf>,
 
+    /// Shell commands executed before each LLM request; their stdout is
+    /// injected into the system prompt as additional context.
+    #[serde(default)]
+    pub plugins: Vec<String>,
+
     /// Per-provider environment settings (API keys, base URLs, etc.).
     #[serde(default)]
     pub providers: ProviderSettings,
@@ -71,6 +76,7 @@ impl Default for Config {
             system_prompt: None,
             additional_context: None,
             context_files: Vec::new(),
+            plugins: Vec::new(),
             providers: ProviderSettings::default(),
             thinking: false,
         }

@@ -99,6 +99,7 @@ enum Field {
     SystemPrompt,
     AdditionalContext,
     ContextFiles,
+    Plugins,
     OpenAi,
     Anthropic,
     Ollama,
@@ -114,6 +115,7 @@ impl Field {
             Self::SystemPrompt => "system_prompt",
             Self::AdditionalContext => "additional_context",
             Self::ContextFiles => "context_files",
+            Self::Plugins => "plugins",
             Self::Thinking => "thinking",
             Self::OpenAi => "providers.openai",
             Self::Anthropic => "providers.anthropic",
@@ -140,6 +142,9 @@ impl Field {
             Self::ContextFiles => {
                 "File paths whose contents are injected as high-priority context into the system prompt."
             }
+            Self::Plugins => {
+                "Shell commands run before each request; their stdout is injected into the prompt."
+            }
             Self::OpenAi => "OpenAI provider settings: api_key, base_url.",
             Self::Anthropic => "Anthropic provider settings: api_key, base_url.",
             Self::Ollama => "Ollama provider settings: api_key (usually unset), base_url.",
@@ -155,6 +160,7 @@ const FIELDS: &[Field] = &[
     Field::SystemPrompt,
     Field::AdditionalContext,
     Field::ContextFiles,
+    Field::Plugins,
     Field::OpenAi,
     Field::Anthropic,
     Field::Ollama,
@@ -229,6 +235,7 @@ fn handle_field(siv: &mut Cursive, state: Arc<Mutex<State>>, field: Field) {
             |c, v| c.additional_context = v,
         ),
         Field::ContextFiles => edit_context_files(siv, state),
+        Field::Plugins => edit_plugins(siv, state),
         Field::OpenAi => show_provider_menu(siv, state, ProviderSlot::OpenAi),
         Field::Anthropic => show_provider_menu(siv, state, ProviderSlot::Anthropic),
         Field::Ollama => show_provider_menu(siv, state, ProviderSlot::Ollama),
@@ -529,6 +536,114 @@ fn show_add_context_file(siv: &mut Cursive, state: Arc<Mutex<State>>) {
     let on_add_button = on_add.clone();
     let dialog = Dialog::around(ResizedView::with_min_width(60, body))
         .title("Add context file")
+        .button("Add", move |s| on_add_button(s))
+        .button("Cancel", |s| {
+            s.pop_layer();
+        });
+
+    siv.add_layer(dialog);
+}
+
+const PLUGINS_LIST: &str = "plugins_list";
+
+fn edit_plugins(siv: &mut Cursive, state: Arc<Mutex<State>>) {
+    let current: Vec<String> = state.lock().unwrap().config.plugins.clone();
+
+    let mut list: SelectView<String> = SelectView::new();
+    for cmd in &current {
+        list.add_item(cmd.clone(), cmd.clone());
+    }
+    let list = vim_keys(list.with_name(PLUGINS_LIST));
+
+    let state_add = state.clone();
+    let state_remove = state.clone();
+    let state_save = state.clone();
+    let state_cancel = state.clone();
+
+    let body = LinearLayout::vertical()
+        .child(TextView::new(
+            "Shell commands run before each LLM request. \
+             Their stdout is injected into the prompt as additional context.",
+        ))
+        .child(TextView::new(""))
+        .child(list.scrollable().min_height(8));
+
+    let dialog = Dialog::around(ResizedView::with_min_width(60, body))
+        .title("plugins")
+        .button("Add", move |s| {
+            show_add_plugin(s, state_add.clone());
+        })
+        .button("Remove", move |s| {
+            let selected: Option<String> = s
+                .call_on_name(PLUGINS_LIST, |v: &mut SelectView<String>| {
+                    v.selection().map(|arc| (*arc).clone())
+                })
+                .flatten();
+            if let Some(cmd) = selected {
+                {
+                    let mut st = state_remove.lock().unwrap();
+                    st.config.plugins.retain(|c| c != &cmd);
+                }
+                s.call_on_name(PLUGINS_LIST, |v: &mut SelectView<String>| {
+                    let idx = v.iter().position(|(_, val)| val == &cmd);
+                    if let Some(idx) = idx {
+                        v.remove_item(idx);
+                    }
+                });
+            }
+        })
+        .button("Save", move |s| {
+            save_and_notify(s, &state_save);
+        })
+        .button("Back", move |s| show_main_menu(s, state_cancel.clone()));
+
+    let state_esc = state.clone();
+    let wrapped = OnEventView::new(dialog).on_event(Event::Key(Key::Esc), move |s| {
+        show_main_menu(s, state_esc.clone())
+    });
+    siv.pop_layer();
+    siv.add_layer(wrapped);
+}
+
+fn show_add_plugin(siv: &mut Cursive, state: Arc<Mutex<State>>) {
+    let input_name = "new_plugin_cmd";
+    let state2 = state.clone();
+
+    let on_add: SubmitFn = Arc::new(move |s: &mut Cursive| {
+        let raw: String = s
+            .call_on_name(input_name, |v: &mut EditView| v.get_content().to_string())
+            .unwrap_or_default();
+        let trimmed = raw.trim().to_string();
+        if !trimmed.is_empty() {
+            {
+                let mut st = state2.lock().unwrap();
+                if !st.config.plugins.contains(&trimmed) {
+                    st.config.plugins.push(trimmed.clone());
+                }
+            }
+            s.call_on_name(PLUGINS_LIST, |v: &mut SelectView<String>| {
+                v.add_item(trimmed.clone(), trimmed);
+            });
+        }
+        s.pop_layer();
+    });
+
+    let edit = EditView::new()
+        .on_submit({
+            let on_add = on_add.clone();
+            move |s, _| on_add(s)
+        })
+        .with_name(input_name)
+        .full_width();
+
+    let body = LinearLayout::vertical()
+        .child(TextView::new("Enter the shell command to run as a plugin:"))
+        .child(TextView::new(""))
+        .child(edit);
+
+    let on_add_button = on_add.clone();
+    let dialog = Dialog::around(ResizedView::with_min_width(60, body))
+        .title("Add plugin")
         .button("Add", move |s| on_add_button(s))
         .button("Cancel", |s| {
             s.pop_layer();

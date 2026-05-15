@@ -50,6 +50,38 @@ fn build_system_prompt(base: &str, config: &Config) -> String {
         }
     }
 
+    if !config.plugins.is_empty() {
+        prompt.push_str("\n\nThe following output was produced by user-configured plugins run immediately before this request:\n");
+        for cmd in &config.plugins {
+            let result = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(cmd)
+                .output();
+            match result {
+                Ok(out) if out.status.success() => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    let stdout = stdout.trim();
+                    if !stdout.is_empty() {
+                        prompt.push_str(&format!("\n--- plugin: {cmd} ---\n"));
+                        prompt.push_str(stdout);
+                        prompt.push_str("\n---\n");
+                    }
+                }
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    prompt.push_str(&format!(
+                        "\n[plugin `{cmd}` exited {}: {}]\n",
+                        out.status,
+                        stderr.trim()
+                    ));
+                }
+                Err(e) => {
+                    prompt.push_str(&format!("\n[plugin `{cmd}` failed to run: {e}]\n"));
+                }
+            }
+        }
+    }
+
     if let Some(ctx) = &config.additional_context
         && !ctx.trim().is_empty()
     {
