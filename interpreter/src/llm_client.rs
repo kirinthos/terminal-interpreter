@@ -125,6 +125,10 @@ async fn call_llm(
         builder = builder.temperature(t);
     }
 
+    if let Some(thinking) = config.thinking {
+        builder = builder.reasoning(thinking);
+    }
+
     let llm = builder
         .build()
         .map_err(|e| anyhow!("building {provider_key} client for {model}: {e}"))?;

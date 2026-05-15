@@ -103,6 +103,7 @@ enum Field {
     OpenAi,
     Anthropic,
     Ollama,
+    Thinking,
 }
 
 impl Field {
@@ -142,6 +143,9 @@ impl Field {
             Self::OpenAi => "OpenAI provider settings: api_key, base_url.",
             Self::Anthropic => "Anthropic provider settings: api_key, base_url.",
             Self::Ollama => "Ollama provider settings: api_key (usually unset), base_url.",
+            Self::Thinking => {
+                "Enable model thinking output (e.g., CoT traces). Toggle on/off."
+            }
         }
     }
 }
@@ -156,6 +160,7 @@ const FIELDS: &[Field] = &[
     Field::OpenAi,
     Field::Anthropic,
     Field::Ollama,
+    Field::Thinking,
 ];
 
 // ---------------------------------------------------------------------------
@@ -221,6 +226,7 @@ fn handle_field(siv: &mut Cursive, state: Arc<Mutex<State>>, field: Field) {
         Field::OpenAi => show_provider_menu(siv, state, ProviderSlot::OpenAi),
         Field::Anthropic => show_provider_menu(siv, state, ProviderSlot::Anthropic),
         Field::Ollama => show_provider_menu(siv, state, ProviderSlot::Ollama),
+        Field::Thinking => edit_bool(siv, state, field, state.lock().unwrap().config.thinking, |c, v| c.thinking = v),
     }
 }
 
@@ -394,6 +400,53 @@ fn edit_multiline_string(
         .child(TextView::new(field.description()))
         .child(TextView::new("\nValue (blank to unset):"))
         .child(textarea);
+    let on_save_button = on_save.clone();
+    push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
+}
+
+fn edit_bool(
+    siv: &mut Cursive,
+    state: Arc<Mutex<State>>,
+    field: Field,
+    current: Option<bool>,
+    apply: impl Fn(&mut Config, Option<bool>) + Send + Sync + 'static,
+) {
+    let input_name = "bool_input";
+    let state2 = state.clone();
+    let apply = Arc::new(apply);
+
+    let on_save: SubmitFn = Arc::new(move |s: &mut Cursive| {
+        let raw: String = s
+            .call_on_name(input_name, |v: &mut EditView| v.get_content().to_string())
+            .unwrap_or_default();
+        let value = if raw.trim().is_empty() {
+            None
+        } else if raw.trim().to_lowercase() == "on" || raw.trim() == "true" || raw.trim() == "yes" {
+            Some(true)
+        } else if raw.trim().to_lowercase() == "off" || raw.trim() == "false" || raw.trim() == "no" {
+            Some(false)
+        } else {
+            s.add_layer(Dialog::info("Enter 'on'/'true'/'yes' or 'off'/'false'/'no'"));
+            return;
+        };
+        apply(&mut state2.lock().unwrap().config, value);
+        show_main_menu(s, state2.clone());
+    });
+
+    let content = current.map(|v| if v { "on" } else { "off" }).unwrap_or_default();
+    let edit = EditView::new()
+        .content(content)
+        .on_submit({
+            let on_save = on_save.clone();
+            move |s, _| on_save(s)
+        })
+        .with_name(input_name)
+        .fixed_width(20);
+
+    let body = LinearLayout::vertical()
+        .child(TextView::new(field.description()))
+        .child(TextView::new("\nToggle (on/off):"))
+        .child(edit);
     let on_save_button = on_save.clone();
     push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
 }
