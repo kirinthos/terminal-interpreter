@@ -17,8 +17,7 @@ use cursive::theme::{BorderStyle, Color, PaletteColor};
 use cursive::traits::*;
 use cursive::view::Nameable;
 use cursive::views::{
-    Dialog, EditView, LinearLayout, OnEventView, Panel, ResizedView, SelectView, TextArea,
-    TextView,
+    Dialog, EditView, LinearLayout, OnEventView, Panel, ResizedView, SelectView, TextArea, TextView,
 };
 
 use crate::config::{Config, ProviderEnv};
@@ -115,6 +114,7 @@ impl Field {
             Self::SystemPrompt => "system_prompt",
             Self::AdditionalContext => "additional_context",
             Self::ContextFiles => "context_files",
+            Self::Thinking => "thinking",
             Self::OpenAi => "providers.openai",
             Self::Anthropic => "providers.anthropic",
             Self::Ollama => "providers.ollama",
@@ -143,9 +143,7 @@ impl Field {
             Self::OpenAi => "OpenAI provider settings: api_key, base_url.",
             Self::Anthropic => "Anthropic provider settings: api_key, base_url.",
             Self::Ollama => "Ollama provider settings: api_key (usually unset), base_url.",
-            Self::Thinking => {
-                "Enable model thinking output (e.g., CoT traces). Toggle on/off."
-            }
+            Self::Thinking => "Enable model thinking output (e.g., CoT traces). Toggle on/off.",
         }
     }
 }
@@ -168,10 +166,18 @@ const FIELDS: &[Field] = &[
 // ---------------------------------------------------------------------------
 
 fn show_main_menu(siv: &mut Cursive, state: Arc<Mutex<State>>) {
+    let thinking = state.lock().unwrap().config.thinking;
     let mut select: SelectView<Field> = SelectView::new();
     let label_w = FIELDS.iter().map(|f| f.label().len()).max().unwrap_or(0);
     for f in FIELDS {
-        let label = format!("{:<w$}  {}", f.label(), f.description(), w = label_w);
+        let desc = match f {
+            Field::Thinking => {
+                let mark = if thinking { "[x]" } else { "[ ]" };
+                format!("{mark}  {}", f.description())
+            }
+            _ => f.description().to_string(),
+        };
+        let label = format!("{:<w$}  {}", f.label(), desc, w = label_w);
         select.add_item(label, *f);
     }
     select.set_on_submit({
@@ -226,7 +232,14 @@ fn handle_field(siv: &mut Cursive, state: Arc<Mutex<State>>, field: Field) {
         Field::OpenAi => show_provider_menu(siv, state, ProviderSlot::OpenAi),
         Field::Anthropic => show_provider_menu(siv, state, ProviderSlot::Anthropic),
         Field::Ollama => show_provider_menu(siv, state, ProviderSlot::Ollama),
-        Field::Thinking => edit_bool(siv, state, field, state.lock().unwrap().config.thinking, |c, v| c.thinking = v),
+        Field::Thinking => {
+            state.lock().unwrap().config.thinking ^= true;
+            let idx = FIELDS.iter().position(|f| matches!(f, Field::Thinking)).unwrap();
+            show_main_menu(siv, state);
+            siv.call_on_name("main_menu", |select: &mut SelectView<Field>| {
+                select.set_selection(idx);
+            });
+        }
     }
 }
 
@@ -404,52 +417,6 @@ fn edit_multiline_string(
     push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
 }
 
-fn edit_bool(
-    siv: &mut Cursive,
-    state: Arc<Mutex<State>>,
-    field: Field,
-    current: Option<bool>,
-    apply: impl Fn(&mut Config, Option<bool>) + Send + Sync + 'static,
-) {
-    let input_name = "bool_input";
-    let state2 = state.clone();
-    let apply = Arc::new(apply);
-
-    let on_save: SubmitFn = Arc::new(move |s: &mut Cursive| {
-        let raw: String = s
-            .call_on_name(input_name, |v: &mut EditView| v.get_content().to_string())
-            .unwrap_or_default();
-        let value = if raw.trim().is_empty() {
-            None
-        } else if raw.trim().to_lowercase() == "on" || raw.trim() == "true" || raw.trim() == "yes" {
-            Some(true)
-        } else if raw.trim().to_lowercase() == "off" || raw.trim() == "false" || raw.trim() == "no" {
-            Some(false)
-        } else {
-            s.add_layer(Dialog::info("Enter 'on'/'true'/'yes' or 'off'/'false'/'no'"));
-            return;
-        };
-        apply(&mut state2.lock().unwrap().config, value);
-        show_main_menu(s, state2.clone());
-    });
-
-    let content = current.map(|v| if v { "on" } else { "off" }).unwrap_or_default();
-    let edit = EditView::new()
-        .content(content)
-        .on_submit({
-            let on_save = on_save.clone();
-            move |s, _| on_save(s)
-        })
-        .with_name(input_name)
-        .fixed_width(20);
-
-    let body = LinearLayout::vertical()
-        .child(TextView::new(field.description()))
-        .child(TextView::new("\nToggle (on/off):"))
-        .child(edit);
-    let on_save_button = on_save.clone();
-    push_detail(siv, state, field.label(), body, move |s| on_save_button(s));
-}
 
 const CONTEXT_FILES_LIST: &str = "context_files_list";
 

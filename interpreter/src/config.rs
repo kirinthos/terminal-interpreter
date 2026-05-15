@@ -34,7 +34,7 @@ pub struct Config {
 
     /// Enable/disable model thinking output (e.g., CoT traces).
     #[serde(default)]
-    pub thinking: Option<bool>,
+    pub thinking: bool,
 
     /// Paths to files whose contents are injected into the system prompt as
     /// high-priority context on every request.
@@ -72,7 +72,7 @@ impl Default for Config {
             additional_context: None,
             context_files: Vec::new(),
             providers: ProviderSettings::default(),
-            thinking: default_thinking(),
+            thinking: false,
         }
     }
 }
@@ -119,10 +119,6 @@ fn default_model() -> String {
 
 fn default_history_limit() -> usize {
     DEFAULT_HISTORY_LIMIT
-}
-
-fn default_thinking() -> bool {
-    false
 }
 
 pub fn default_config_path() -> Option<PathBuf> {
