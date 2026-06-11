@@ -14,7 +14,7 @@ can review and run it.
 
 It's intentionally small: one binary, one config file, a thin shell wrapper.
 
-![Terminal Interpreter Demo Video](https://blog.crosscompiled.com/videos/terminal-interpreter-demo.mp4)
+https://github.com/user-attachments/assets/d7c3c32b-b5c9-44da-babb-f389ae714db4
 
 ---
 
