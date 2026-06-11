@@ -34,14 +34,13 @@ fn build_system_prompt(base: &str, config: &Config) -> String {
     if !config.context_files.is_empty() {
         prompt.push_str(
             "\n\nThe user has provided the following files as high-priority context. \
+             These notes and commands should always be preferred over alternatives when possible.
              Treat their contents as authoritative when deciding what command to generate:\n",
         );
         for path in &config.context_files {
             match std::fs::read_to_string(path) {
                 Ok(contents) => {
-                    prompt.push_str(&format!("\n--- file: {} ---\n", path.display()));
                     prompt.push_str(&contents);
-                    prompt.push_str("\n---\n");
                 }
                 Err(e) => {
                     prompt.push_str(&format!("\n[Could not read {}: {e}]\n", path.display()));
@@ -53,10 +52,7 @@ fn build_system_prompt(base: &str, config: &Config) -> String {
     if !config.plugins.is_empty() {
         prompt.push_str("\n\nThe following output was produced by user-configured plugins run immediately before this request:\n");
         for cmd in &config.plugins {
-            let result = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(cmd)
-                .output();
+            let result = std::process::Command::new("sh").arg("-c").arg(cmd).output();
             match result {
                 Ok(out) if out.status.success() => {
                     let stdout = String::from_utf8_lossy(&out.stdout);
